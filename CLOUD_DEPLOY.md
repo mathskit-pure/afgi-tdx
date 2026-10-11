@@ -12,10 +12,11 @@
 ## 二、云端目录与命令
 
 约定云端工作目录：`/workspace/afgi_tdx`（与已有云端任务 `B-score` 同级）。
+代码仓库是**公开仓库**，因此云端 `git clone` / `git pull` 免凭证 —— 这是选公开而非私有的唯一原因（仓库内无任何密钥、Token 或隐私数据）。
 
 ```bash
 # 首次（只需一次）
-git clone <仓库地址> /workspace/afgi_tdx
+git clone https://github.com/mathskit-pure/afgi-tdx.git /workspace/afgi_tdx
 cd /workspace/afgi_tdx && bash cloud/bootstrap.sh     # 装依赖 + 探测服务器 + 建缓存
 
 # 每天
@@ -60,7 +61,7 @@ cd /workspace/afgi_tdx && GIT_PULL=1 bash cloud/daily.sh
   （T+1 早上处理 T 日数据，与本机原任务同一时点；指数与 ETF 日 K 落地比个股晚，早上取数才拿得全）
 - 运行位置：云端（WorkBuddy 云端任务，不是本机）
 
-可粘贴的完整 prompt（把 `<仓库地址>` 换成实际地址）：
+可粘贴的完整 prompt（把 `https://github.com/mathskit-pure/afgi-tdx.git` 换成实际地址）：
 
 ```
 在云端目录 /workspace/afgi_tdx 下执行 A 股市场情绪指数（AFGI）的每日更新，并把结果覆写到固定线上页面。
@@ -70,7 +71,7 @@ cd /workspace/afgi_tdx && GIT_PULL=1 bash cloud/daily.sh
 → 10:00 PROF 盈利能力模型（本机）。后两棒暂时仍在本机，本任务必须在此之前完成。
 
 执行步骤：
-1) 首次运行（目录不存在时）：git clone <仓库地址> /workspace/afgi_tdx
+1) 首次运行（目录不存在时）：git clone https://github.com/mathskit-pure/afgi-tdx.git /workspace/afgi_tdx
    然后 cd /workspace/afgi_tdx && bash cloud/bootstrap.sh
    该脚本会装依赖、用 python3 run.py --probe 探测通达信行情服务器、并全量建立行情缓存，
    首次约 5~15 分钟。若目录已存在则跳过本步。
