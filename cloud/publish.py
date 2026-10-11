@@ -21,6 +21,7 @@ rebalance_signal.csv 来更新 4 张 KPI 卡；云端仓库里没有这些文件
     3  找不到 output/afgi_latest.json 或报告，跳过发布
     4  AFGI 主页面上传失败
     5  AFGI 主页面已上传，但股池页面 KPI 卡同步失败（不回滚主页面）
+    6  AFGI 主页面节点已不存在：放弃上传（绝不新建替代页面）
 """
 from __future__ import annotations
 
@@ -93,6 +94,25 @@ def run(cmd: list[str], timeout: int = 1800) -> str:
             f"命令失败({' '.join(cmd[:3])}): rc={r.returncode}\n"
             f"{out[-1200:]}\n{r.stderr.decode('utf-8', errors='replace')[-800:]}")
     return out
+
+
+def node_exists(skill: Path, node: str) -> bool:
+    """上传前探活：确认目标节点还在。
+
+    节点被删除后 import_html.py 并不会报错退出，而是「新建」一个页面，
+    这会往资料库里塞垃圾：实测曾把 AFGI 报告误建成 ONJ32MfcXPSPzKifc5pKlM。
+    所以固定节点覆写前必须先探活，不存在就直接放弃，绝不新建。
+    """
+    r = subprocess.run(
+        [sys.executable, str(skill / "page" / "download_page_artifacts.py"),
+         "--node-id", node],
+        capture_output=True, timeout=300,
+    )
+    out = r.stdout.decode("utf-8", errors="replace")
+    if "KS_ARTIFACTS_OK" in out:
+        return True
+    log(f"  探活失败：{out.strip()[:300] or r.stderr.decode('utf-8', errors='replace')[:300]}")
+    return False
 
 
 def import_page(skill: Path, html: Path, node: str) -> str:
@@ -201,7 +221,13 @@ def main() -> int:
             "可用环境变量 WB_LIBRARY_SKILL 指定其路径")
         return 4
 
-    # 1) AFGI 主页面
+    # 1) AFGI 主页面（先探活，节点不在就放弃，避免误建）
+    if not node_exists(skill, AFGI_NODE):
+        log(f"!! 目标节点 {AFGI_NODE} 已不存在（可能被删除或移入回收站）")
+        log("!! 已放弃上传——若继续调用 import_html，它会新建一个垃圾页面")
+        log("!! 请到资料库恢复该页面，或新建后把新 nodeId 填进 cloud/publish.py 的 AFGI_NODE")
+        return 6
+
     try:
         out = import_page(skill, report, AFGI_NODE)
         log(f"AFGI 页面已覆写 {AFGI_NODE}：https://www.workbuddy.cn/space/d/{AFGI_NODE}")
