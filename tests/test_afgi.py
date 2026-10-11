@@ -16,6 +16,7 @@ from afgi.config import SENTIMENT_WEIGHTS  # noqa: E402
 from afgi.indicators import limit_threshold  # noqa: E402
 from afgi.model import build_components  # noqa: E402
 from afgi.scoring import classify_state, percentile_score, rolling_percentile_score  # noqa: E402
+from afgi.update import TAIL_BUFFER, _is_trading_hours, plan_need  # noqa: E402
 
 
 class TestScoring(unittest.TestCase):
@@ -133,6 +134,40 @@ class TestAggregation(unittest.TestCase):
         frame["industry_up_ratio"] = np.nan
         out = build_components(frame)
         self.assertTrue((out["sector_sentiment"] == 50.0).all())
+
+
+class TestIncrementalPlan(unittest.TestCase):
+    """增量更新计划：缓存已覆盖最新交易日时仍必须回补尾部。
+
+    回归背景：盘中运行时通达信会返回当日「未收盘」的快照 K 线（开/低价已定，
+    但最高价、收盘价、成交量只是盘中值）。若此时判定「无需补下载」返回 0，
+    这根快照就永远不会被修正，导致当日情绪指数出现几十个点的偏差。
+    """
+
+    def setUp(self):
+        self.calendar = pd.DatetimeIndex(pd.to_datetime(
+            ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-08", "2026-10-09"]
+        ))
+
+    def test_missing_zero_still_refreshes_tail(self):
+        """缓存已到最新交易日：不能返回 0，必须回补尾部。"""
+        cached = pd.Timestamp("2026-10-09")
+        self.assertGreater(plan_need(cached, self.calendar, 800), 0)
+
+    def test_missing_days_adds_buffer(self):
+        cached = pd.Timestamp("2026-09-30")
+        self.assertEqual(plan_need(cached, self.calendar, 800), 2 + TAIL_BUFFER)
+
+    def test_no_cache_triggers_full_build(self):
+        self.assertEqual(plan_need(None, self.calendar, 800), 800)
+
+    def test_empty_calendar_triggers_full_build(self):
+        self.assertEqual(plan_need(pd.Timestamp("2026-10-09"), pd.DatetimeIndex([]), 800), 800)
+
+    def test_trading_hours_guard(self):
+        self.assertTrue(_is_trading_hours(pd.Timestamp("2026-10-09 12:44")))
+        self.assertFalse(_is_trading_hours(pd.Timestamp("2026-10-09 07:30")))
+        self.assertFalse(_is_trading_hours(pd.Timestamp("2026-10-11 12:44")))  # 周日
 
 
 if __name__ == "__main__":

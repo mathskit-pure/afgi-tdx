@@ -63,13 +63,36 @@ def _last_date(frame: Optional[pd.DataFrame]) -> Optional[pd.Timestamp]:
     return pd.to_datetime(frame["date"]).max()
 
 
+def _is_trading_hours(now: Optional[object] = None) -> bool:
+    """粗略判断当前是否落在 A 股交易时段（周一至周五 09:15-15:30）。
+
+    只用于告警，不做精确交易日历判断——节假日误判为盘中最多多打一行提示。
+    """
+    ts = pd.Timestamp.now() if now is None else pd.Timestamp(now)
+    if ts.weekday() >= 5:
+        return False
+    minutes = ts.hour * 60 + ts.minute
+    return 9 * 60 + 15 <= minutes <= 15 * 60 + 30
+
+
 def plan_need(cached_last: Optional[pd.Timestamp], calendar: pd.DatetimeIndex, count: int) -> int:
-    """根据缓存最后日期与市场日历，计算需要补下载的根数。"""
+    """根据缓存最后日期与市场日历，计算需要补下载的根数。
+
+    关键：**缓存已覆盖到最新交易日时也必须回补尾部若干根**，不能返回 0。
+
+    原因（实测 bug）：若在盘中（例如 12:44）跑过一次，通达信会把当日
+    「尚未收盘」的那根 K 线返回出来——开/低价已定，但最高价、收盘价、成交量
+    都只是盘中快照。这根快照一旦落盘，后续每次运行都会因
+    ``missing == 0`` 判定为「缓存已是最新」而再也不去重新拉取，坏数据永久
+    驻留：表现为当日被误判成暴跌+缩量，AFGI 出现几十个点的大偏差。
+
+    返回 ``TAIL_BUFFER`` 让尾部几根每次都被最新数据覆盖，快照即可自愈。
+    """
     if cached_last is None or calendar is None or len(calendar) == 0:
         return count
     missing = int((calendar > cached_last).sum())
     if missing <= 0:
-        return 0
+        return TAIL_BUFFER
     return int(min(count, missing + TAIL_BUFFER))
 
 
@@ -196,7 +219,20 @@ def incremental_update(
          f"缓存最新 {cached_last.date() if cached_last is not None else '无'}")
 
     need = plan_need(cached_last, calendar, count)
-    _log(f"计划每只标的补下载 {need} 根" if need else "缓存已是最新，无需补下载")
+    if cached_last is None:
+        _log(f"缓存无有效 K 线，全量重建 {need} 根")
+    elif need >= count:
+        _log(f"缓存严重滞后，全量重建 {need} 根")
+    else:
+        _log(f"每只标的回补/刷新尾部 {need} 根（含盘中快照自愈）")
+
+    # 盘中运行的告警：此时市场最新那根 K 线是未收盘快照，计算出的当日值不可信，
+    # 收盘后再跑一次会自动被尾部刷新覆盖。
+    if market_last is not None:
+        now = pd.Timestamp.now().normalize()
+        if market_last == now and _is_trading_hours():
+            _log("警告：当前处于交易时段，最后一根 K 线是当日盘中快照，"
+                 f"{market_last.date()} 的结果仅供参考，收盘后重跑会自动修正")
 
     # 1) 股票池：找出新上市标的
     universe = load_a_share_universe(pool)
