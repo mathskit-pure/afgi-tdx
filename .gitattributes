@@ -1,0 +1,5 @@
+# 保证 shell 脚本在 Linux 上 checkout 为 LF（否则 bash 会报 \r 错误）
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
