@@ -38,7 +38,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = ROOT / "output"
 
-AFGI_NODE = "3ezinMuQRXc9M8TpQsOJgF"   # 市场情绪指数AFGI（覆写，禁止新建）
+# 市场情绪指数AFGI（覆写，禁止新建）
+# 原节点 3ezinMuQRXc9M8TpQsOJgF 已于 2026-10-11 确认永久删除（node-info 报
+# 11510 node index not found，search-nodes 也搜不到），资料库没有恢复接口；
+# 这是用 output/report.html 重建后的新节点。再被删只能再重建一次并回填这里。
+AFGI_NODE = "ddbJ1onUkhBUybcqWTrwG5"
 POOL_NODE = "iB8I58mCTooLicPQ0Kyq0M"   # 舞弊调整质量因子·季度动态股池（覆写）
 
 # 与 scripts/refresh_page.py 的 AFGI_BADGE 完全一致（五档 + 未知）

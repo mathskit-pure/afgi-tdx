@@ -43,14 +43,14 @@ cd /workspace/afgi_tdx && GIT_PULL=1 bash cloud/daily.sh
 
 | 页面 | nodeId | 链接 |
 |---|---|---|
-| 市场情绪指数AFGI | `3ezinMuQRXc9M8TpQsOJgF` | https://www.workbuddy.cn/space/d/3ezinMuQRXc9M8TpQsOJgF |
+| 市场情绪指数AFGI | `ddbJ1onUkhBUybcqWTrwG5` | https://www.workbuddy.cn/space/d/ddbJ1onUkhBUybcqWTrwG5 |
 | 舞弊调整质量因子·季度动态股池 | `iB8I58mCTooLicPQ0Kyq0M` | https://www.workbuddy.cn/space/d/iB8I58mCTooLicPQ0Kyq0M |
 
 `cloud/publish.py` 对股池页面**只改 AFGI 那一张 KPI 卡**（数值 / 状态徽章 / 截至日），其余 KPI 卡与全部图表、回测、持仓明细一概不动 —— 因为云端没有主项目的 `nav.csv`、持仓数据，不该由它去改。
 
 ## 五、与本机任务的关系
 
-- 云端与本机**不能同时跑**：两边都会覆写同一个页面节点 `3ezinMuQRXc9M8TpQsOJgF`，且各自维护独立的行情缓存，双跑会互相覆盖。
+- 云端与本机**不能同时跑**：两边都会覆写同一个页面节点 `ddbJ1onUkhBUybcqWTrwG5`，且各自维护独立的行情缓存，双跑会互相覆盖。
 - 建议：云端任务跑通并通过 1~2 个交易日验证后，把本机那条「每日收盘后更新 A 股情绪指数（AFGI）」暂停（PAUSED），保留其余本机任务不动。
 - 回退方案：云端异常时，把本机任务恢复 ACTIVE 即可，两侧脚本完全独立。
 
@@ -95,9 +95,9 @@ risk_appetite / small_large_relative_strength 最易受影响），不要当成�
 汇报（简体中文，简要）：
 · 最新计算日、AFGI 数值与所处状态（极度恐惧/恐惧/中性/贪婪/极度贪婪）、较前一交易日变化、20 日均线；
 · 本次补下载了多少根 K 线、新增了多少只股票；
-· AFGI 固定页面是否已成功覆写（https://www.workbuddy.cn/space/d/3ezinMuQRXc9M8TpQsOJgF ）；
+· AFGI 固定页面是否已成功覆写（https://www.workbuddy.cn/space/d/ddbJ1onUkhBUybcqWTrwG5 ）；
 · 股池页面「A股恐慌贪婪指数」指标卡是否已同步（同步值 / 幂等跳过 / 失败及原因）。
 
 约束：只运行上述命令并汇报，不要修改任何代码或配置；只允许覆写 CLOUD_DEPLOY.md 中列出的
-两个固定节点（3ezinMuQRXc9M8TpQsOJgF、iB8I58mCTooLicPQ0Kyq0M），绝不新建页面。
+两个固定节点（ddbJ1onUkhBUybcqWTrwG5、iB8I58mCTooLicPQ0Kyq0M），绝不新建页面。
 ```
