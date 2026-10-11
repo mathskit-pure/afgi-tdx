@@ -61,7 +61,7 @@ cd /workspace/afgi_tdx && GIT_PULL=1 bash cloud/daily.sh
   （T+1 早上处理 T 日数据，与本机原任务同一时点；指数与 ETF 日 K 落地比个股晚，早上取数才拿得全）
 - 运行位置：云端（WorkBuddy 云端任务，不是本机）
 
-可粘贴的完整 prompt（把 `https://github.com/mathskit-pure/afgi-tdx.git` 换成实际地址）：
+可粘贴的完整 prompt：
 
 ```
 在云端目录 /workspace/afgi_tdx 下执行 A 股市场情绪指数（AFGI）的每日更新，并把结果覆写到固定线上页面。
