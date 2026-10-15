@@ -130,6 +130,29 @@ def import_page(skill: Path, html: Path, node: str) -> str:
     return out
 
 
+def publish_node(skill: Path, node: str, label: str) -> bool:
+    """把已覆写的编辑态节点重新发布为外部网页（解冻冻结快照）。
+
+    资料库「发布为外部网页」生成的是一份冻结的公开副本，与编辑态节点解耦：
+    只 import_html 覆写编辑态而不 publish，外部网页就停在旧版本。这里在上传
+    成功后立即重新发布，保证外部网页跟上最新数据（每天多次发布幂等无害）。
+    """
+    if not node_exists(skill, node):
+        log(f"!! {label} 节点 {node} 已不存在，跳过发布（避免误建替代页面）")
+        return False
+    try:
+        out = run([sys.executable, str(skill / "page" / "publish_page.py"),
+                   "--node-id", node])
+    except Exception as e:
+        log(f"!! {label} 发布命令失败：{e}")
+        return False
+    if "KS_PAGE_PUBLISH" in out:
+        log(f"✓ {label} 已重新发布（外部网页已同步）：{node}")
+        return True
+    log(f"!! {label} 发布未确认（未见 KS_PAGE_PUBLISH）：{out[-400:]}")
+    return False
+
+
 def pull_live_page(skill: Path, node: str, out_dir: str) -> Path:
     """拉取线上最新版页面当基底，返回入口 HTML 路径。"""
     out = run([sys.executable, str(skill / "page" / "download_page_artifacts.py"),
@@ -240,6 +263,9 @@ def main() -> int:
         log(f"!! AFGI 页面上传失败：{e}")
         return 4
 
+    # 上传成功 → 立即重新发布外部网页，否则网页端停在旧版本
+    publish_node(skill, AFGI_NODE, "AFGI 主页面")
+
     if args.skip_kpi:
         return 0
 
@@ -256,6 +282,7 @@ def main() -> int:
         out_html.write_text(new_html, encoding="utf-8")
         import_page(skill, out_html, POOL_NODE)
         log(f"股池页面 KPI 已同步 {POOL_NODE}：https://www.workbuddy.cn/space/d/{POOL_NODE}")
+        publish_node(skill, POOL_NODE, "股池页面（KPI）")
         return 0
     except Exception as e:
         log(f"!! KPI 同步失败（AFGI 主页面已更新，不受影响）：{e}")
