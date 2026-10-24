@@ -2,18 +2,25 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Dict, List, Tuple
+
+import pandas as pd
 
 from .config import (
     A_PREFIX_BJ,
     A_PREFIX_SH,
     A_PREFIX_SZ,
+    BOARD_MARKET,
     INDUSTRY_CODE_RANGE,
     INDUSTRY_LEVEL1_ONLY,
     SW_L1_ALIASES,
     SW_L1_MIN_MATCH,
+    UNIVERSE_FILE,
 )
 from .tdx import TdxPool, fetch_index_bars, fetch_security_list
+
+ROOT = Path(__file__).resolve().parent.parent
 
 Security = Tuple[int, str, str]  # (market, code, name)
 
@@ -30,8 +37,35 @@ def _dedup(rows: List[Dict]) -> List[Dict]:
     return out
 
 
+def _load_web_universe() -> List[Security]:
+    """HTTP 源没有稳定的全市场列表接口，股票池从 data/universe_web.csv 读取。
+
+    文件由 ``scripts/build_universe_web.py`` 生成（或从上一次的通达信缓存导出），
+    列：code, market, name。
+    """
+    path = ROOT / UNIVERSE_FILE
+    if not path.exists():
+        raise RuntimeError(
+            f"缺少 HTTP 源的股票池文件 {path}，无法确定全 A 样本；"
+            "请先运行 scripts/build_universe_web.py 生成"
+        )
+    frame = pd.read_csv(path, dtype={"code": str})
+    frame = frame.dropna(subset=["code"])
+    universe: List[Security] = []
+    for row in frame.itertuples(index=False):
+        code = str(row.code).strip().zfill(6)
+        if not code or code == "000000":
+            continue
+        universe.append((int(row.market), code, str(getattr(row, "name", "") or "").strip()))
+    universe.sort(key=lambda item: (item[0], item[1]))
+    return universe
+
+
 def load_a_share_universe(pool: TdxPool) -> List[Security]:
-    """从通达信证券列表筛出沪深京 A 股。"""
+    """沪深京 A 股股票池。"""
+    if getattr(pool, "is_web", False):
+        return _load_web_universe()
+
     universe: List[Security] = []
     for market, prefixes in ((0, A_PREFIX_SZ), (1, A_PREFIX_SH)):
         rows = _dedup(fetch_security_list(pool, market))
@@ -68,12 +102,20 @@ def _is_level1(name: str, min_len: int = 2) -> bool:
 
 
 def load_industry_universe(pool: TdxPool) -> Tuple[List[Security], str]:
-    """构建申万行业指数池（通达信 881xxx）。
+    """构建行业指数池。
 
-    先取证券列表里能拿到的名称，再按代码区间逐个探测有效性：
-    列表接口在 881101-881146 区段会失败，但这些代码本身可以正常取日 K，
-    直接扫描可以补全农林牧渔、基础化工、钢铁、有色金属、食品饮料等一级板块。
+    - 通达信源：申万行业指数（881xxx，一/二/三级共数百个）
+    - HTTP 源：腾讯行业板块（申万一级 31 个，颗粒度更粗但口径一致）
     """
+    if getattr(pool, "is_web", False):
+        from .web import fetch_board_list
+
+        boards = fetch_board_list(pool)
+        industries = [(BOARD_MARKET, code, name) for code, name in boards]
+        if not industries:
+            return [], "行业板块获取失败"
+        return industries, f"申万一级行业（腾讯板块）{len(industries)} 个"
+
     names: Dict[str, str] = {}
     for row in _dedup(fetch_security_list(pool, 1)):
         code = str(row.get("code", ""))

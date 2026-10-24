@@ -458,6 +458,10 @@ def render_report(df: pd.DataFrame, output_path: Path, meta: dict | None = None)
 
     universe_size = meta.get("universe_size", "")
     industry_desc = meta.get("industry_desc", "")
+    source_name = meta.get("source_name") or "通达信行情接口（pytdx）"
+    source_detail = meta.get("source_detail") or (
+        "全部个股日 K、指数日 K、50ETF/国债 ETF 日 K、行业指数日 K 均取自通达信公开行情服务器"
+    )
 
     html_doc = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -513,7 +517,7 @@ def render_report(df: pd.DataFrame, output_path: Path, meta: dict | None = None)
 <div class="wrap">
   <div class="card">
     <h1>A 股市场情绪指数（AFGI）</h1>
-    <div class="sub">数据源：通达信行情接口（pytdx） · 计算日 {trade_date} · 股票池 {universe_size} 只 A 股</div>
+    <div class="sub">数据源：{source_name} · 计算日 {trade_date} · 股票池 {universe_size} 只 A 股</div>
     <div class="hero">
       <div>{gauge_svg(score, state)}</div>
       <div class="hero-info">
@@ -551,12 +555,13 @@ def render_report(df: pd.DataFrame, output_path: Path, meta: dict | None = None)
     <h2>数据与方法说明</h2>
     <div class="note">
       <p><b>数据源。</b>原仓库依赖 Tushare Pro（需 Token 且 ETF 日线接口要求 5000 积分）与 AkShare，
-      两者在当前环境不可用。本实现改用<b>通达信公开行情服务器（TCP 协议，pytdx）</b>：
-      全 A 个股日 K、指数日 K、50ETF/国债 ETF 日 K、申万行业指数日 K、除权除息记录全部取自通达信，
-      无需 Token、无积分门槛、无调用频次限制。{html.escape(industry_desc)}。</p>
-      <p><b>复权处理。</b>通达信日 K 为未复权价格，直接用 close/prev_close 会在除权日产生虚假暴跌。
-      本实现按通达信除权除息记录（category=1）自行计算前复权因子，还原 OHLC 后再计算涨跌幅与涨跌停，
-      避免把 10 送 10 误判成跌停。</p>
+      两者在当前环境不可用。本实现采用<b>双通道行情源</b>：优先<b>通达信公开行情服务器（TCP 协议，pytdx）</b>；
+      当通达信站点集体失效（TCP 可连但协议无响应）时，自动切换到<b>腾讯行情 HTTP 接口</b>，
+      保证每日更新不中断。{source_detail}。无需 Token、无积分门槛。{html.escape(industry_desc)}。</p>
+      <p><b>复权处理。</b>未复权价格直接用 close/prev_close 会在除权日产生虚假暴跌。
+      通达信通道按除权除息记录（category=1）自行计算前复权因子，还原 OHLC 后再计算涨跌幅与涨跌停；
+      HTTP 通道直接取前复权（qfq）序列，并在增量拼接时校验复权基准，一旦发现基准漂移就整窗重取，
+      避免拼接处价格跳变被误判成涨跌停。</p>
       <p><b>打分方式。</b>每个原始指标换算成它在自身过去 252 个交易日分布中的分位数（0-100），
       历史样本不足 60 日时取 50 分中性值；反向指标（波动率、炸板率、60 日新低占比）取 100 减去分位数。
       九分项按固定权重加权，总分裁剪到 0-100 后映射到极度恐惧 / 恐惧 / 中性 / 贪婪 / 极度贪婪五档。</p>

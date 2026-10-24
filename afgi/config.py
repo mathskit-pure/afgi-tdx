@@ -18,6 +18,32 @@ TDX_TIMEOUT = 8
 TDX_RETRIES = 3
 TDX_WORKERS = 8
 
+# ---------------------------------------------------------------------------
+# HTTP 行情源（腾讯）：通达信协议不可用时的自动兜底
+# ---------------------------------------------------------------------------
+# 数据源选择：auto = 先探测通达信，全部失效则自动切 HTTP；tdx / web = 强制指定。
+# 也可用环境变量 AFGI_SOURCE=web 覆盖。
+DATA_SOURCE = "auto"
+TDX_PROBE_TIMEOUT = 3        # 探测通达信时的单站超时（秒），避免启动卡顿
+TDX_PROBE_HOSTS = 3          # 探测几台即可判定（全部失效才切 HTTP）
+
+WEB_TIMEOUT = 15
+WEB_RETRIES = 3
+WEB_WORKERS = 12
+WEB_KLINE_URL = (
+    "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get"
+    "?param={symbol},day,,,{count},qfq"
+)
+WEB_BOARD_LIST_URL = (
+    "https://proxy.finance.qq.com/cgi/cgi-bin/rank/pt/getRank"
+    "?board_type=hy&sort_type=PriceRatio&direct=down&offset=0&count=100"
+)
+# 行业板块在 HTTP 源里用独立 market 标记（真实 market 由代码前缀决定）
+BOARD_MARKET = 90
+
+# HTTP 源的 A 股股票池落盘位置（通达信列表接口不可用，改由本地文件维护）
+UNIVERSE_FILE = "assets/universe_web.csv"
+
 # 每只标的取的日 K 根数。252 日新高需要 252 根前瞻窗口，
 # 再叠加 60 日新低与 500 个输出交易日，800 根（约 3.2 年）是安全值。
 BAR_COUNT = 800

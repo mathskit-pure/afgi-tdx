@@ -154,7 +154,14 @@ def fetch_security_bars(
     code: str,
     count: int = 800,
 ) -> pd.DataFrame:
-    """个股 / 场内基金日 K。"""
+    """个股 / 场内基金日 K。
+
+    取数池若是 HTTP 源（``WebPool``），这里直接转交，上层无需感知数据来源。
+    """
+    if getattr(pool, "is_web", False):
+        from .web import fetch_bars
+
+        return fetch_bars(pool, market, code, count)
     bars = pool.call(lambda api: api.get_security_bars(KLINE_DAILY, market, code, 0, count))
     return _bars_to_frame(bars)
 
@@ -166,6 +173,10 @@ def fetch_index_bars(
     count: int = 800,
 ) -> pd.DataFrame:
     """指数日 K（大盘指数与行业指数都走这个接口）。"""
+    if getattr(pool, "is_web", False):
+        from .web import fetch_bars
+
+        return fetch_bars(pool, market, code, count)
     bars = pool.call(lambda api: api.get_index_bars(KLINE_DAILY, market, code, 0, count))
     return _bars_to_frame(bars)
 
@@ -175,7 +186,10 @@ def fetch_xdxr(pool: TdxPool, market: int, code: str) -> List[Dict[str, Any]]:
 
     pytdx 返回字段：year/month/day/category/name，
     category==1（除权除息）时 fenhong/peigujia/songzhuangu/peigu 有效。
+    HTTP 源直接返回前复权价，不需要除权记录。
     """
+    if getattr(pool, "is_web", False):
+        return []
     records = pool.call(lambda api: api.get_xdxr_info(market, code))
     if not records:
         return []
@@ -186,7 +200,10 @@ def fetch_security_list(pool: TdxPool, market: int, max_pages: int = 32) -> List
     """分页拉取某市场的证券列表。
 
     通达信列表接口偶发返回失败，因此需要逐页重试；空页不能直接判定为结束。
+    HTTP 源没有该接口，返回空（股票池改由 data/universe_web.csv 维护）。
     """
+    if getattr(pool, "is_web", False):
+        return []
     jobs = [(market, start) for start in range(0, max_pages * 1000, 1000)]
     pages = pool.map(
         jobs,

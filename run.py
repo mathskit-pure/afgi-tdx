@@ -30,16 +30,31 @@ def _progress(done: int, total: int, msg: str) -> None:
 
 def probe() -> int:
     from afgi.config import TDX_HOSTS
+    from afgi.source import make_pool
     from afgi.tdx import probe_hosts
 
     print(f"探测 {len(TDX_HOSTS)} 台通达信行情服务器 ...")
     usable = probe_hosts(TDX_HOSTS)
-    if not usable:
-        print("没有可用于日 K 的服务器，请检查网络或更换 afgi/config.py 中的 TDX_HOSTS")
+    if usable:
+        for host, port, cost in usable:
+            print(f"  [OK] {host}:{port}  {cost:.0f} ms")
+        print(f"共 {len(usable)} 台可用")
+        return 0
+
+    print("通达信站点全部不可用，检查 HTTP 兜底源（腾讯行情）...")
+    pool = make_pool()
+    if not getattr(pool, "is_web", False):
+        print("兜底源不可用，请检查网络")
         return 1
-    for host, port, cost in usable:
-        print(f"  [OK] {host}:{port}  {cost:.0f} ms")
-    print(f"共 {len(usable)} 台可用")
+    from afgi.web import fetch_board_list, fetch_security_bars
+
+    bars = fetch_security_bars(pool, 0, "000001", 5)
+    boards = fetch_board_list(pool)
+    if bars is None or bars.empty:
+        print("  [FAIL] 腾讯行情日 K 不可用")
+        return 1
+    print(f"  [OK] 腾讯行情 HTTP：平安银行 {len(bars)} 根，最新 {bars['date'].max().date()}")
+    print(f"  [OK] 行业板块 {len(boards)} 个")
     return 0
 
 
@@ -160,6 +175,8 @@ def main(argv=None) -> int:
             meta={
                 "universe_size": df.attrs.get("universe_size", ""),
                 "industry_desc": df.attrs.get("industry_desc", ""),
+                "source_name": df.attrs.get("source_name", ""),
+                "source_detail": df.attrs.get("source_detail", ""),
             },
         )
     finally:

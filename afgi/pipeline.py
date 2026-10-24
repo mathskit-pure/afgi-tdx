@@ -24,6 +24,7 @@ from .indicators import (
     calc_stock_indicators,
 )
 from .model import build_components, latest_snapshot
+from .source import make_pool
 from .tdx import TdxPool, fetch_index_bars, fetch_security_bars, fetch_xdxr
 from .universe import load_a_share_universe, load_industry_universe
 
@@ -232,8 +233,15 @@ def run(
     cache_path = data_dir / f"raw_frames{'_limited' if limit else ''}.pkl"
     payload = _load_cache(cache_path) if use_cache else None
 
-    pool = TdxPool()
+    pool = make_pool(log=_log)
     stats: Dict[str, object] = {}
+    if getattr(pool, "is_web", False):
+        source_name = "腾讯行情 HTTP"
+        source_detail = ("个股 / ETF / 指数日 K 取自腾讯行情 HTTP 接口（前复权），"
+                         "行业指数改用申万一级行业板块日 K")
+    else:
+        source_name = "通达信行情接口（pytdx）"
+        source_detail = ("个股 / ETF / 指数 / 行业指数日 K 与除权除息记录全部取自通达信公开行情服务器")
 
     if payload is None:
         payload = full_build(pool, count=count, progress=progress, limit=limit)
@@ -282,4 +290,6 @@ def run(
     result.attrs["industry_desc"] = payload.get("industry_desc", "")
     result.attrs["universe_size"] = payload.get("universe_size", 0)
     result.attrs["update_stats"] = stats
+    result.attrs["source_name"] = source_name
+    result.attrs["source_detail"] = source_detail
     return result

@@ -113,6 +113,46 @@ def _merge_bars(old: Optional[pd.DataFrame], new: Optional[pd.DataFrame], count:
     return df.tail(count).reset_index(drop=True)
 
 
+# 前复权基准校验阈值：HTTP 源的前复权价以「最新一根」为基准 1.0，
+# 一旦期间发生除权除息，历史序列的绝对价格会整体平移。
+BASIS_TOLERANCE = 0.001
+
+
+def fetch_bars_for_update(
+    pool: TdxPool,
+    market: int,
+    code: str,
+    old: Optional[pd.DataFrame],
+    need: int,
+    count: int = BAR_COUNT,
+) -> pd.DataFrame:
+    """取用于增量合并的 K 线片段（仅 HTTP 源需要基准校验）。
+
+    通达信源给的是未复权价，任意片段拼接都安全，直接取 ``need`` 根即可。
+    HTTP 源给的是前复权价，若与缓存重叠日的收盘价差异超过 ``BASIS_TOLERANCE``，
+    说明中间发生过除权、复权基准变了，此时必须整窗重取，否则拼接处会出现价格跳变
+    （涨跌停判断与均线占比都会跟着失真）。
+    """
+    bars = fetch_security_bars(pool, market, code, need)
+    if not getattr(pool, "is_web", False):
+        return bars
+    if old is None or old.empty:
+        return fetch_security_bars(pool, market, code, count)
+    if bars is None or bars.empty:
+        return bars
+    cached = old.copy()
+    cached["date"] = pd.to_datetime(cached["date"])
+    overlap = bars.merge(cached[["date", "close"]], on="date", how="inner", suffixes=("", "_old"))
+    if overlap.empty:
+        return fetch_security_bars(pool, market, code, count)
+    last = overlap.iloc[-1]
+    base = float(last["close_old"] or 0)
+    if base > 0 and abs(float(last["close"]) / base - 1.0) > BASIS_TOLERANCE:
+        full = fetch_security_bars(pool, market, code, count)
+        return full if full is not None and not full.empty else bars
+    return bars
+
+
 # ---------------------------------------------------------------------------
 # 全量构建（首次运行）
 # ---------------------------------------------------------------------------
@@ -251,7 +291,7 @@ def incremental_update(
     def update_job(pair):
         code, item = pair
         market = item["market"]
-        bars = fetch_security_bars(pool, market, code, need)
+        bars = fetch_bars_for_update(pool, market, code, item.get("bars"), need, count)
         if bars is None or bars.empty:
             return code, None
         merged = _merge_bars(item.get("bars"), bars, count)
@@ -299,11 +339,14 @@ def incremental_update(
     #    通达信的指数/ETF 日 K 常滞后到 T+1 才落地，一旦某天没取到，
     #    need 归零后再也不会重试，缺口永久存在且越拉越大。现在每类单独算缺口。
     lag_report = []
+    # HTTP 源（前复权）一律整窗重取：指数/ETF/行业合计仅数十个标的，成本可忽略，
+    # 却能彻底避开「复权基准漂移后拼接跳变」这一类坑。
+    web_full = getattr(pool, "is_web", False)
 
     index_frames = payload.get("index_frames", {})
     for key, (market, code, _name) in INDEX_CODES.items():
         old = index_frames.get(key)
-        sub = plan_need(_last_date(old), calendar, count)
+        sub = count if web_full else plan_need(_last_date(old), calendar, count)
         if old is None or old.empty:
             index_frames[key] = fetch_index_bars(pool, market, code, count)
             continue
@@ -318,7 +361,7 @@ def incremental_update(
     fund_frames = payload.get("fund_frames", {})
     for key, (market, code, _name) in FUND_CODES.items():
         old = fund_frames.get(key)
-        sub = plan_need(_last_date(old), calendar, count)
+        sub = count if web_full else plan_need(_last_date(old), calendar, count)
         if old is None or old.empty:
             fund_frames[key] = fetch_security_bars(pool, market, code, count)
             continue
@@ -340,7 +383,27 @@ def incremental_update(
          for f in industry_frames.values() if isinstance(f, pd.DataFrame) and not f.empty),
         default=0,
     )
-    if missing_industry or industry_lag:
+    if web_full:
+        # HTTP 源的行业池是按板块代码重建的，缓存里残留的通达信 881xxx 序列
+        # 已经不可能再更新——直接丢弃，避免旧序列混进来稀释广度指标。
+        stale = [c for c in industry_frames if not str(c).startswith("pt")]
+        for code in stale:
+            industry_frames.pop(code, None)
+        if stale or missing_industry or industry_lag:
+            industries, industry_desc = load_industry_universe(pool)
+            payload["industry_desc"] = industry_desc
+            _log(f"行业指数池重建：{industry_desc}")
+
+            def ind_job(item):
+                _market, code, _name = item
+                return code, fetch_index_bars(pool, _market, code, count)
+
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                for code, bars in ex.map(ind_job, industries):
+                    if bars is not None and not bars.empty:
+                        industry_frames[code] = bars
+            _log(f"行业指数日K 取到 {len(industry_frames)} 个")
+    elif missing_industry or industry_lag:
         def ind_job(code):
             return code, fetch_index_bars(pool, 1, code, max(industry_lag, 3))
         with ThreadPoolExecutor(max_workers=8) as ex:
