@@ -17,7 +17,11 @@ import time
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
-from pytdx.hq import TdxHq_API
+
+try:  # pytdx 只服务通达信通道；缺失时仍应允许腾讯 HTTP 兜底跑通
+    from pytdx.hq import TdxHq_API
+except ImportError:  # pragma: no cover - 仅在依赖缺失的环境触发
+    TdxHq_API = None  # type: ignore[assignment]
 
 from .config import TDX_HOSTS, TDX_RETRIES, TDX_TIMEOUT, TDX_WORKERS
 
@@ -36,6 +40,11 @@ class TdxPool:
         timeout: int = TDX_TIMEOUT,
         retries: int = TDX_RETRIES,
     ) -> None:
+        if TdxHq_API is None:
+            raise RuntimeError(
+                "未安装 pytdx，通达信数据源不可用；请改用腾讯 HTTP 兜底"
+                "（AFGI_SOURCE=auto 或 web）"
+            )
         self.hosts = list(hosts)
         self.timeout = timeout
         self.retries = retries
@@ -219,6 +228,10 @@ def fetch_security_list(pool: TdxPool, market: int, max_pages: int = 32) -> List
 def probe_hosts(hosts: Sequence[Tuple[str, int]] = TDX_HOSTS) -> List[Tuple[str, int, float]]:
     """探测可返回日 K 的服务器，便于排障与更换站点。"""
     import socket
+
+    if TdxHq_API is None:
+        print("[AFGI] 未安装 pytdx，跳过通达信站点探测，直接使用 HTTP 兜底源")
+        return []
 
     usable: List[Tuple[str, int, float]] = []
     for host, port in hosts:

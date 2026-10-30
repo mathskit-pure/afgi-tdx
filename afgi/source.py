@@ -20,7 +20,10 @@ def _tdx_alive(
     """快速探测前几台通达信站点是否真能返回日 K（线程/启动开销都很小）。"""
     import socket
 
-    from pytdx.hq import TdxHq_API
+    try:
+        from pytdx.hq import TdxHq_API
+    except ImportError:  # 依赖缺失视为站点不可用，直接走 HTTP 兜底
+        return False
 
     for host, port in (hosts or TDX_HOSTS)[:limit]:
         try:
